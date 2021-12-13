@@ -1,2 +1,0 @@
-# sistemm
-sistemim
