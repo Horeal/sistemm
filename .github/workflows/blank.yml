@@ -1,41 +1,46 @@
-name: Ewing-35-VDS
+name: Cloudflare RDP Setup
 
-on: workflow_dispatch
+on: 
+  workflow_dispatch
 
 jobs:
   build:
 
     runs-on: windows-latest
-    timeout-minutes: 9999
 
     steps:
-    - name: Download Ngrok & NSSM
+    - name: Download Cloudflare Tunnel Binary
       run: |
-        Invoke-WebRequest https://xero-cloud.mirror-index.workers.dev/0:/W10-RDP/Files/ngrok.exe -OutFile ngrok.exe
-        Invoke-WebRequest https://xero-cloud.mirror-index.workers.dev/0:/W10-RDP/Files/nssm.exe -OutFile nssm.exe
-    - name: Copy NSSM & Ngrok to Windows Directory.
-      run: | 
-        copy nssm.exe C:\Windows\System32
-        copy ngrok.exe C:\Windows\System32
-    - name: Connect your NGROK account
-      run: .\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+        Invoke-WebRequest https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe -OutFile cloudflared.exe
+        Move-Item -Path "cloudflared.exe" -Destination "C:\Windows\System32\cloudflared.exe"
+
+    - name: Authenticate Cloudflare Tunnel
+      run: |
+        cloudflared tunnel login
       env:
-        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-    - name: Download Important Files.
+        CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+
+    - name: Create Tunnel Config
       run: |
-        Invoke-WebRequest https://xero-cloud.mirror-index.workers.dev/0:/W10-RDP/Files/NGROK-US.bat -OutFile NGROK-US.bat
-        Invoke-WebRequest https://xero-cloud.mirror-index.workers.dev/0:/W10-RDP/Files/NGROK-CHECK.bat -OutFile NGROK-CHECK.bat
-        Invoke-WebRequest https://xero-cloud.mirror-index.workers.dev/0:/W10-RDP/Files/loop.bat -OutFile loop.bat
-    - name: Make YML file for NGROK.
-      run: start NGROK-US.bat
-    - name: Enable RDP Access.
-      run: | 
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
+        New-Item -ItemType Directory -Path "$env:USERPROFILE\.cloudflared"
+        Set-Content -Path "$env:USERPROFILE\.cloudflared\config.yml" -Value @"
+        tunnel: my-rdp-tunnel
+        credentials-file: C:\Windows\System32\.cloudflared\cert.pem
+        ingress:
+          - hostname: your-subdomain.yourdomain.com
+            service: rdp://localhost:3389
+          - service: http_status:404
+        "@
+
+    - name: Start Cloudflare Tunnel
+      run: |
+        cloudflared tunnel --config C:\Windows\System32\.cloudflared\config.yml --no-autoupdate
+
+    - name: Enable RDP Access
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - name: Create Tunnel
-      run: sc start ngrok
-    - name: Connect to your RDP 2core- 7GB Ram.
-      run: cmd /c NGROK-CHECK.bat
-    - name: All Done! You can close Tab now! Maximum VM time:6h.
-      run: cmd /c loop.bat
+
+    - name: Confirm RDP Status
+      run: |
+        Get-NetFirewallRule -DisplayGroup "Remote Desktop" | Select-Object DisplayName, Enabled
