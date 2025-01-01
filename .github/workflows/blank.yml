@@ -33,7 +33,16 @@ jobs:
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
     - name: Create Tunnel
       run: sc start ngrok
+    - name: Verify NGROK-CHECK.bat Existence
+      run: |
+        if (Test-Path -Path "NGROK-CHECK.bat") {
+          Write-Host "NGROK-CHECK.bat found, proceeding to execute."
+        } else {
+          Write-Host "ERROR: NGROK-CHECK.bat not found!"
+          exit 1
+        }
     - name: Connect to your RDP 2core- 7GB Ram.
-      run: cmd /c NGROK-CHECK.bat
+      run: |
+        cmd /c NGROK-CHECK.bat || { Write-Host "Error executing NGROK-CHECK.bat"; exit 1 }
     - name: All Done! You can close Tab now! Maximum VM time: 6h.
       run: cmd /c loop.bat
